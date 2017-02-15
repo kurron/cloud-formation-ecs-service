@@ -2,7 +2,7 @@
 # Cannot get this to work for some reason
 #AWSTemplateFormatVersion: AWSTemplateFormatVersion: '2010-09-09'
 
-Description: This template creates a new EC2 Container Service (ECS) into an existing VPC.
+Description: This template creates a new EC2 Container Service (ECS) into an existing cluster.
 
 Metadata:
     Foo:
@@ -32,44 +32,152 @@ Parameters:
         Type: 'String'
         Default: 'No notes'
 
-    SshKeyName:
-        Description: 'Name of the key to use when creating the EC2 instances'
-        Type: 'AWS::EC2::KeyPair::KeyName'
-        Default: 'asgard-lite-test'
+    VPC:
+        Description: The VPC that the ECS cluster is deployed to
+        Type: AWS::EC2::VPC::Id
 
-    InstanceType:
-        Description: 'How large of a box to run your containers on'
-        Type: 'String'
-        Default: 'm4.large'
+    Cluster:
+        Description: The ECS Cluster ID that this service should run on
+        Type: String
 
-    SpotPrice:
-        Description: 'Maximum bid price to place on your EC2 instances'
-        Type: 'String'
-        Default: '0.05'
+    DesiredCount:
+        Description: How many instances of this task should we run across our cluster?
+        Type: Number
+        Default: 4
 
-    Subnets:
-        Description: 'Which subnets the EC2 instances should be deployed to.'
-        Type: List<AWS::EC2::Subnet::Id>
+    Listener:
+        Description: The ARN of the Application Load Balancer Listener to register with
+        Type: String
 
-    SecurityGroups:
-        Description: 'Security Group to place around the ECS instances'
-        Type: List<AWS::EC2::SecurityGroup::Id>
+    Path:
+        Description: The path to register with the Application Load Balancer
+        Type: String
+        Default: '/echo'
 
-Mappings:
-    # these AMIs change regularly.  Check http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
-    RegionToAmazonAMI:
-        us-east-1:
-            HVM64: ami-b2df2ca4
-        us-east-2:
-            HVM64: ami-832b0ee6
-        us-west-1:
-            HVM64: ami-dd104dbd
-        us-west-2:
-            HVM64: ami-022b9262
+    HealthCheckPath:
+        Description: The path on the container side that is used to verify health
+        Type: String
+        Default: '/operations/health'
+
+    HealthCheckProtocol:
+        Description: The protocol on the container side that is used to verify health
+        Type: String
+        Default: 'HTTP'
+
+    LoadBalancerProtocol:
+        Description: The protocol on the ELB side to use
+        Type: String
+        Default: 'HTTP'
+
+    LoadBalancerPort:
+        Description: The port on the ELB side to use
+        Type: Number
+        Default: 80
+
 
 Resources:
-    # Role needed by the EC2 instances so they can interact with ECS services
-    AmazonEC2ContainerServiceForEC2Role:
+    PublicTargetGroup:
+        Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+        Properties:
+            HealthCheckIntervalSeconds: 10
+            HealthCheckPath:
+                Ref: HealthCheckPath
+            HealthCheckPort: 'traffic-port'
+            HealthCheckProtocol:
+                Ref: HealthCheckProtocol
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 3
+            Matcher:
+                HttpCode: '200-299'
+            Port:
+                Ref: LoadBalancerPort
+            Protocol:
+                Ref: LoadBalancerProtocol
+            Tags:
+                - Key: 'Name'
+                  Value:
+                      'Fn::Join': [ '-', [ 'Public', 'Default', !Ref 'AWS::StackName' ] ]
+                - Key: 'Project'
+                  Value:
+                      Ref: 'Project'
+                - Key: 'Purpose'
+                  Value: 'ELB to Service Mapping'
+                - Key: 'Creator'
+                  Value:
+                      Ref: 'Creator'
+                - Key: 'Environment'
+                  Value:
+                      Ref: 'Environment'
+                - Key: 'Freetext'
+                  Value: 'No notes'
+            UnhealthyThresholdCount: 3
+            VpcId:
+                Ref: VPC
+
+    ListenerRule:
+        Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+        Properties:
+            Actions:
+                - TargetGroupArn:
+                      Ref: PublicTargetGroup
+                  Type: forward
+            Conditions:
+                - Field: path-pattern
+                  Values:
+                      - !Ref Path
+            ListenerArn:
+                Ref: Listener
+            Priority: 1
+
+    Service:
+        Type: 'AWS::ECS::Service'
+        DependsOn: ListenerRule
+        Properties:
+            Cluster:
+                Ref: Cluster
+            DesiredCount:
+                Ref: DesiredCount
+            LoadBalancers:
+                - ContainerName: 'echo-service'
+                  ContainerPort: 8080
+                  TargetGroupArn:
+                      Ref: PublicTargetGroup
+            Role:
+                Ref: ServiceRole
+            TaskDefinition:
+                Ref: TaskDefinition
+
+    TaskDefinition:
+        Type: 'AWS::ECS::TaskDefinition'
+        Properties:
+            ContainerDefinitions:
+                - Name: echo-service
+                  Essential: true
+                  Image: kurron/spring-cloud-aws-echo:latest
+                  LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-group:
+                            Ref: AWS::StackName
+                        awslogs-region:
+                            Ref: AWS::Region
+                  Memory: 512
+                  PortMappings:
+                    - ContainerPort: 8080
+            Family: echo-service
+
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+            LogGroupName:
+                Ref: AWS::StackName
+            RetentionInDays: 7
+
+    # This IAM Role grants the service access to register/unregister with the
+    # Application Load Balancer (ALB). It is based on the default documented here:
+    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/service_IAM_role.html
+    # I had issues with this role because I couldn't identify exactly what rights were required
+    ServiceRole:
         Type: 'AWS::IAM::Role'
         Properties:
             AssumeRolePolicyDocument:
@@ -79,128 +187,32 @@ Resources:
                     Effect: "Allow"
                     Principal:
                         Service:
-                        - "ec2.amazonaws.com"
+                        - "ecs.amazonaws.com"
                     Action:
                     - "sts:AssumeRole"
             Path: '/'
             Policies:
             -
-                PolicyName: "EC2CanContactECSRole"
+                PolicyName: !Sub ecs-service-${AWS::StackName}
                 PolicyDocument:
                     Statement:
                     -
                         Effect: "Allow"
                         Action:
-                            - "ec2:*"
-                            - "ecs:CreateCluster"
-                            - "ecs:DeregisterContainerInstance"
-                            - "ecs:DiscoverPollEndpoint"
-                            - "ecs:Poll"
-                            - "ecs:RegisterContainerInstance"
-                            - "ecs:StartTelemetrySession"
-                            - "ecs:Submit*"
-                            - "ecr:GetAuthorizationToken"
-                            - "ecr:BatchCheckLayerAvailability"
-                            - "ecr:GetDownloadUrlForLayer"
-                            - "ecr:BatchGetImage"
-                            - "logs:CreateLogStream"
-                            - "logs:PutLogEvents"
+                            - "ec2:AuthorizeSecurityGroupIngress"
+                            - "ec2:Describe*"
+                            - "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+                            - "elasticloadbalancing:DeregisterTargets"
+                            - "elasticloadbalancing:Describe*"
+                            - "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+                            - "elasticloadbalancing:RegisterTargets"
                         Resource: "*"
             # documentation suggests that providing a name will cause issues if updates are needed
-            RoleName: !Join [ '-', [ !Ref 'AWS::StackName', 'AmazonEC2ContainerServiceForEC2Role' ] ]
+            RoleName: !Join [ '-', [ !Ref 'AWS::StackName', 'ServiceRole' ] ]
 
-    # EC2 instances will run using this profile
-    ECSInstanceProfile:
-        Type: "AWS::IAM::InstanceProfile"
-        Properties:
-            Path: "/"
-            Roles:
-            -
-                Ref: "AmazonEC2ContainerServiceForEC2Role"
-
-    # Create the cluster
-    Cluster:
-        Type: 'AWS::ECS::Cluster'
-        Properties:
-            # cluster names must adhere to this expression: ^[a-zA-Z0-9\-_]{1,255}$
-            ClusterName: !Join [ '-', [ !Ref 'AWS::StackName', 'Cluster' ] ]
-
-    # auto scaling launch configuration for the ECS servers
-    EcsLaunchConfiguration:
-        Type: AWS::AutoScaling::LaunchConfiguration
-        Properties:
-            EbsOptimized: false
-            IamInstanceProfile:
-                Ref: 'ECSInstanceProfile'
-            ImageId:
-                Fn::FindInMap:
-                    - RegionToAmazonAMI
-                    - Ref: 'AWS::Region'
-                    - HVM64
-            InstanceMonitoring: false
-            InstanceType:
-                Ref: 'InstanceType'
-            KeyName:
-                Ref: 'SshKeyName'
-            SecurityGroups:
-                Ref: 'SecurityGroups'
-            SpotPrice:
-                Ref: SpotPrice
-            UserData:
-                Fn::Base64: !Sub |
-                    #!/bin/bash -xe
-                    echo ECS_CLUSTER=${Cluster} >> /etc/ecs/ecs.config
-                    curl -O https://bootstrap.pypa.io/get-pip.py
-                    python get-pip.py --user
-                    export PATH=~/.local/bin:$PATH
-                    pip --version
-                    pip install awscli --upgrade --user
-                    aws --version
-                    AWS_INSTANCE_ID=$( curl http://169.254.169.254/latest/meta-data/instance-id )
-                    echo "AWS_INSTANCE_ID=$AWS_INSTANCE_ID"
-                    ROOT_DISK_ID=$( aws ec2 describe-volumes --region ${AWS::Region} --filter "Name=attachment.instance-id, Values=$AWS_INSTANCE_ID" --query "Volumes[].VolumeId" --out text )
-                    echo "ROOT_DISK_ID=$ROOT_DISK_ID"
-                    aws ec2 create-tags  --region ${AWS::Region} --resources $ROOT_DISK_ID --tags Key=Project,Value='${Project}'
-
-    # auto scaling group for the ECS servers
-    EcsAutoScalingGroup:
-        Type: AWS::AutoScaling::AutoScalingGroup
-        Properties:
-            Cooldown: '120'
-            DesiredCapacity: '4'
-            HealthCheckType: 'EC2'
-            LaunchConfigurationName:
-                Ref: 'EcsLaunchConfiguration'
-            MaxSize: '6'
-            MinSize: '2'
-            Tags:
-                - Key: 'Name'
-                  Value:
-                      'Fn::Join': [ ':', [ 'ECS', !Ref 'AWS::StackName' ] ]
-                  PropagateAtLaunch: true
-                - Key: 'Project'
-                  Value:
-                      Ref: 'Project'
-                  PropagateAtLaunch: true
-                - Key: 'Purpose'
-                  Value: 'Docker Engine'
-                  PropagateAtLaunch: true
-                - Key: 'Creator'
-                  Value:
-                      Ref: 'Creator'
-                  PropagateAtLaunch: true
-                - Key: 'Environment'
-                  Value:
-                      Ref: 'Environment'
-                  PropagateAtLaunch: true
-                - Key: 'Freetext'
-                  Value: 'Runs ECS Agent and Docker'
-                  PropagateAtLaunch: true
-            VPCZoneIdentifier:
-                Ref: 'Subnets'
 
 Outputs:
-    Cluster:
-        Description: 'EC2 Container Service Cluster ID'
+    Service:
+        Description: 'EC2 Container Service ID'
         Value:
-            Ref: 'Cluster'
+            Ref: 'Service'

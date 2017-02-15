@@ -2,15 +2,14 @@
 
 # creates a stack in AWS via CloudFromation
 
-STACKNAME=${1:-Weapon-X-ECS}
+STACKNAME=${1:-Weapon-X-ECS-Service}
 PROJECTNAME=${2:-Weapon-X}
-SECURITYGROUPS=${3:-sg-2d0d7955}
-SUBNETS=${4:-subnet-ac62a8e5,subnet-1ae3507d,subnet-af62a8e6,subnet-1be3507c}
-INSTANCETYPE=${5:-m4.large}
-SPOTPRICE=${6:-0.025}
-ENVIRONMENT=${7:-development}
-CREATOR=${8:-CloudFormation}
-TEMPLATELOCATION=${9:-file://$(pwd)/service.yml}
+VPC=${3:-vpc-bd6df4da}
+CLUSTER=${4:-with-elb-ECS-P3YFEBF8US4J-Cluster}
+ELB=${5:-arn:aws:elasticloadbalancing:us-west-2:711226717742:listener/app/Public-ELB/a0fe005a06c8408b/1a25587d06fe0813}
+ENVIRONMENT=${6:-development}
+CREATOR=${7:-CloudFormation}
+TEMPLATELOCATION=${8:-file://$(pwd)/service.yml}
 
 VALIDATE="aws cloudformation validate-template --template-body $TEMPLATELOCATION"
 echo $VALIDATE
@@ -22,10 +21,9 @@ CREATE="aws cloudformation create-stack --stack-name $STACKNAME \
                                         --parameters ParameterKey=Project,ParameterValue=$PROJECTNAME \
                                                      ParameterKey=Environment,ParameterValue=$ENVIRONMENT \
                                                      ParameterKey=Creator,ParameterValue=$CREATOR \
-                                                     ParameterKey=InstanceType,ParameterValue=$INSTANCETYPE \
-                                                     ParameterKey=SpotPrice,ParameterValue=$SPOTPRICE \
-                                                     ParameterKey=Subnets,ParameterValue=\"$SUBNETS\" \
-                                                     ParameterKey=SecurityGroups,ParameterValue=\"$SECURITYGROUPS\" \
+                                                     ParameterKey=VPC,ParameterValue=$VPC \
+                                                     ParameterKey=Cluster,ParameterValue=$CLUSTER \
+                                                     ParameterKey=Listener,ParameterValue=$ELB \
                                         --tags Key=Project,Value=$PROJECTNAME \
                                                Key=Environment,Value=$ENVIRONMENT \
                                                Key=Creator,Value=$CREATOR"
