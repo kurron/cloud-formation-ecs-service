@@ -10,7 +10,7 @@ INSTANCETYPE=${5:-m4.large}
 SPOTPRICE=${6:-0.025}
 ENVIRONMENT=${7:-development}
 CREATOR=${8:-CloudFormation}
-TEMPLATELOCATION=${9:-file://$(pwd)/ecs.yml}
+TEMPLATELOCATION=${9:-file://$(pwd)/service.yml}
 
 VALIDATE="aws cloudformation validate-template --template-body $TEMPLATELOCATION"
 echo $VALIDATE
