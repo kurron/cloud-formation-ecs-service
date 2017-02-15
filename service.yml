@@ -55,9 +55,9 @@ Parameters:
         Default: '/echo'
 
     HealthCheckPath:
-        Description: The path on the container side that is used to verify health
+        Description: The path on the container side that is used to verify health. Will be joined with the Path so leave off beginning slash.
         Type: String
-        Default: '/echo/operations/health'
+        Default: 'operations/health'
 
     HealthCheckProtocol:
         Description: The protocol on the container side that is used to verify health
@@ -74,14 +74,32 @@ Parameters:
         Type: Number
         Default: 80
 
+    DockerImage:
+        Description: The Docker image to pull down and launch
+        Type: String
+        Default: 'kurron/spring-cloud-aws-echo:latest'
+
+    ContainerPort:
+        Description: The port that the Docker container exposes
+        Type: Number
+        Default: 8080
+
+    ContainerMemory:
+        Description: How many megabytes of RAM to limit the container to
+        Type: Number
+        Default: 512
+
+    ContainerName:
+        Description: The name of the container when it is launched
+        Type: String
+        Default: 'echo'
 
 Resources:
     PublicTargetGroup:
         Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
         Properties:
             HealthCheckIntervalSeconds: 10
-            HealthCheckPath:
-                Ref: HealthCheckPath
+            HealthCheckPath: !Join [ '/', [ !Ref 'Path', !Ref 'HealthCheckPath' ] ]
             HealthCheckPort: 'traffic-port'
             HealthCheckProtocol:
                 Ref: HealthCheckProtocol
@@ -138,8 +156,10 @@ Resources:
             DesiredCount:
                 Ref: DesiredCount
             LoadBalancers:
-                - ContainerName: 'echo-service'
-                  ContainerPort: 8080
+                - ContainerName:
+                      Ref: ContainerName
+                  ContainerPort:
+                      Ref: ContainerPort
                   TargetGroupArn:
                       Ref: PublicTargetGroup
             Role:
@@ -147,13 +167,21 @@ Resources:
             TaskDefinition:
                 Ref: TaskDefinition
 
+    # hard coding /operations is a complete hack!
     TaskDefinition:
         Type: 'AWS::ECS::TaskDefinition'
         Properties:
             ContainerDefinitions:
-                - Name: echo-service
+                - Name:
+                      Ref: ContainerName
+                  Environment:
+                      - Name: server_context-path
+                        Value: !Ref Path
+                      - Name: management_context-path
+                        Value: '/operations'
                   Essential: true
-                  Image: kurron/spring-cloud-aws-echo:latest
+                  Image:
+                      Ref: DockerImage
                   LogConfiguration:
                     LogDriver: awslogs
                     Options:
@@ -161,9 +189,11 @@ Resources:
                             Ref: AWS::StackName
                         awslogs-region:
                             Ref: AWS::Region
-                  Memory: 512
+                  Memory:
+                      Ref: ContainerMemory
                   PortMappings:
-                    - ContainerPort: 8080
+                    - ContainerPort:
+                        Ref: ContainerPort
             Family: echo-service
 
     CloudWatchLogsGroup:
