@@ -57,7 +57,7 @@ Parameters:
     HealthCheckPath:
         Description: The path on the container side that is used to verify health
         Type: String
-        Default: '/operations/health'
+        Default: '/echo/operations/health'
 
     HealthCheckProtocol:
         Description: The protocol on the container side that is used to verify health
