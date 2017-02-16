@@ -99,6 +99,11 @@ Parameters:
         Type: String
         Default: 'echo'
 
+    ServiceFamily:
+        Description: The logic group that versions of this service belongs
+        Type: String
+        Default: 'echo'
+
 Resources:
     PublicTargetGroup:
         Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
@@ -200,7 +205,8 @@ Resources:
                   PortMappings:
                     - ContainerPort:
                         Ref: ContainerPort
-            Family: echo-service
+            Family:
+                Ref: ServiceFamily
 
     # This IAM Role grants the service access to register/unregister with the
     # Application Load Balancer (ALB). It is based on the default documented here:
