@@ -74,6 +74,11 @@ Parameters:
         Type: Number
         Default: 80
 
+    ListenerPriority:
+        Description: Where in the ELB listener chain this mapping should be ranked
+        Type: Number
+        Default: 1
+
     DockerImage:
         Description: The Docker image to pull down and launch
         Type: String
@@ -145,7 +150,8 @@ Resources:
                       - !Join [ '/', [ !Ref 'Path', '*' ] ]
             ListenerArn:
                 Ref: Listener
-            Priority: 1
+            Priority:
+                Ref: ListenerPriority
 
     Service:
         Type: 'AWS::ECS::Service'
