@@ -100,9 +100,13 @@ Parameters:
         Default: 'echo'
 
     ServiceFamily:
-        Description: The logic group that versions of this service belongs
+        Description: The logical group that versions of this service belongs
         Type: String
         Default: 'echo'
+
+    LogGroup:
+        Description: The CloudWatch Log Group to send the container logs to
+        Type: String
 
 Resources:
     PublicTargetGroup:
@@ -197,7 +201,7 @@ Resources:
                     LogDriver: awslogs
                     Options:
                         awslogs-group:
-                            Ref: AWS::StackName
+                            Ref: LogGroup
                         awslogs-region:
                             Ref: AWS::Region
                   Memory:
