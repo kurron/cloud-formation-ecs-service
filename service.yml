@@ -211,6 +211,8 @@ Resources:
                         Ref: ContainerPort
             Family:
                 Ref: ServiceFamily
+            TaskRoleArn:
+                Ref: TaskRole
 
     # This IAM Role grants the service access to register/unregister with the
     # Application Load Balancer (ALB). It is based on the default documented here:
@@ -246,6 +248,31 @@ Resources:
                             - "elasticloadbalancing:RegisterTargets"
                         Resource: "*"
 
+    # need to give the container X-Ray rights
+    TaskRole:
+        Type: 'AWS::IAM::Role'
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                -
+                    Sid: ""
+                    Effect: "Allow"
+                    Principal:
+                        Service:
+                        - "ecs.amazonaws.com"
+                    Action:
+                    - "sts:AssumeRole"
+            Path: '/'
+            Policies:
+            -
+                PolicyName: !Sub ecs-task-${AWS::StackName}
+                PolicyDocument:
+                    Statement:
+                    -
+                        Effect: "Allow"
+                        Action:
+                            - "xray:*"
+                        Resource: "*"
 
 Outputs:
     Service:
